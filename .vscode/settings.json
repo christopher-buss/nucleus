@@ -1,0 +1,25 @@
+{
+	// Enable the ESlint flat config support
+	"eslint.experimental.useFlatConfig": true,
+	// Enable eslint for all supported languages
+	"eslint.validate": [
+		"typescript",
+		"markdown",
+		"json",
+		"jsonc",
+		"yaml"
+	],
+	"files.eol": "\n",
+	"editor.formatOnSave": false,
+	"editor.codeActionsOnSave": {
+		"source.fixAll.eslint": "always",
+		"source.organizeImports": "never"
+	},
+	"eslint.run": "onType",
+	"cSpell.words": [
+		"getmetatable",
+		"ipairs",
+		"roblox",
+		"traceback"
+	]
+}

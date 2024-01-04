@@ -1,0 +1,319 @@
+import type { Archetype } from "collections/archetype";
+import { SparseSet } from "collections/sparse-set";
+import type { ComponentBitmask, Internal } from "component";
+import type { AllComponentTypes, ComponentId, EntityId } from "types/ecs";
+import type { World } from "world";
+
+export type RawQuery =
+	| { dt: Array<RawQuery | AllComponentTypes>; op: typeof ALL | typeof ANY }
+	| { dt: RawQuery | AllComponentTypes; op: typeof NOT };
+
+interface MLeaf {
+	dt: Array<ComponentId>;
+	op: typeof ALL | typeof ANY;
+}
+
+interface Group {
+	dt: [MLeaf, ...Array<QueryMask>];
+	op: typeof ALL | typeof ANY;
+}
+
+interface Not {
+	dt: QueryMask;
+	op: typeof NOT;
+}
+
+type QueryMask = Group | Not | MLeaf;
+
+/**
+ * A helper function that matches to all provided components.
+ *
+ * This function should not be used outside of the {@link World.createQuery}
+ * constructor.
+ *
+ * #### Usage Example:
+ * ```ts
+ * // An entity must have components A, B and C.
+ * ALL(ComponentA, ComponentB, ComponentC)
+ *
+ * // An entity must have component A, and either component B or C.
+ * ALL(ComponentA, ANY(ComponentB, ComponentC))
+ * ```
+ *
+ * @param components The components or query to match to.
+ */
+export function ALL(...components: Array<RawQuery | AllComponentTypes>): RawQuery {
+	if (components.size() === 0) {
+		throw "ALL must have at least one component";
+	}
+
+	return { dt: components, op: ALL };
+}
+
+/**
+ * A helper function that matches to any of the provided components.
+ *
+ * This function should not be used outside of the {@link World.createQuery}
+ * constructor.
+ *
+ * #### Usage Example:
+ * ```ts
+ * // An entity must have either components A, B or C.
+ * ANY(ComponentA, ComponentB, ComponentC)
+ *
+ * // An entity must have component A, or either both components B and C.
+ * ANY(ComponentA, ALL(ComponentB, ComponentC))
+ * ```
+ *
+ * @param components The components or query to match to.
+ */
+export function ANY(...components: Array<RawQuery | AllComponentTypes>): RawQuery {
+	if (components.size() === 0) {
+		throw "ANY must have at least one component";
+	}
+
+	return { dt: components, op: ANY };
+}
+
+/**
+ * A helper function that matches if the provided component is not present.
+ *
+ * This function should not be used outside of the {@link World.createQuery}
+ * constructor.
+ *
+ * #### Usage Example:
+ * ```ts
+ * // An entity must not have component A.
+ * NOT(ComponentA)
+ *
+ * // An entity must have component A, and must not have component B.
+ * ALL(ComponentA, NOT(ComponentB))
+ * ```
+ *
+ * @param components The components or query to match to.
+ */
+export function NOT(components: RawQuery | AllComponentTypes): RawQuery {
+	return {
+		dt: typeOf((components as RawQuery).op) === "function" ? components : ALL(components),
+		op: NOT,
+	};
+}
+
+/**
+ * A query is used to filter entities from the world based on their components.
+ *
+ * To create a query, use the {@link World.createQuery} method, which takes a
+ * set of components, and will return a query that matches all the entities in
+ * the owning world that have the given components.
+ *
+ * Queries can be created using the helper functions {@link ALL}, {@link ANY},
+ * and {@link NOT}, which can be used to create complex queries.
+ *
+ * #### Usage Example:
+ * ```ts
+ * import { World, ALL, ANY, NOT } from "@rbxts/tina";
+ * import { Position, Velocity, Acceleration } from "./components";
+ *
+ * const world = Tina.createWorld({...});
+ * const query = world.createQuery(Position, ANY(Velocity, NOT(Acceleration)));
+ * for (const entity of query.iterate()) {
+ * 	// ...
+ * };
+ * ```
+ *
+ * @note Order of iteration is not guaranteed.
+ */
+export class Query {
+	/** The world that the query belongs to. */
+	public readonly world: World;
+
+	public archetypes: Array<Archetype> = [];
+	public entered: SparseSet = new SparseSet();
+	public exited: SparseSet = new SparseSet();
+	public mask: QueryMask;
+
+	constructor(world: World, query?: RawQuery) {
+		this.mask = query ? this.createQuery(query) : { dt: [], op: ALL };
+		this.world = world;
+	}
+
+	/**
+	 * Traverses the query mask, and returns true if the archetype mask
+	 * matches the given query.
+	 *
+	 * This function should not be used directly, and instead is used
+	 * internally by {@link World.createQuery}.
+	 *
+	 * @param target The archetype mask to match against.
+	 * @param mask The query mask to match against.
+	 *
+	 * @returns True if the query mask matches the archetype mask.
+	 */
+	public static match(target: ComponentBitmask, mask: QueryMask): boolean {
+		if (typeOf((mask.dt as Array<number>)[0]) === "number") {
+			return Query.partial(target, mask as MLeaf);
+		}
+
+		if (mask.op === NOT) {
+			return !Query.match(target, mask.dt as QueryMask);
+		}
+
+		if (mask.op === ALL) {
+			for (const query of (mask as Group).dt) {
+				if (!Query.match(target, query)) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		for (const query of (mask as Group).dt) {
+			if (Query.match(target, query)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Iterate over all entities that have entered the query since the last
+	 * time this method was called.
+	 *
+	 * @note This cannot be iterated over multiple times as it will clear the
+	 * contents of the entered set. If you need to iterate over the same set
+	 * multiple times, although unconventional, you can iterate over the dense
+	 * array directly:
+	 * ```ts
+	 * const entered = query.entered.dense;
+	 * for (const entityId of entered) {
+	 *     // ...
+	 * }
+	 * ```
+	 */
+	public *enteredQuery(): Generator<EntityId> {
+		for (const entityId of this.entered.dense) {
+			yield entityId;
+		}
+
+		this.entered.dense.clear();
+	}
+
+	/**
+	 * Iterate over all entities that have exited the query since the last
+	 * time this method was called.
+	 *
+	 * @note This cannot be iterated over multiple times as it will clear the
+	 * contents of the exited set. If you need to iterate over the same set
+	 * multiple times, although unconventional, you can iterate over the dense
+	 * array directly:
+	 * ```ts
+	 * const exited = query.exited.dense;
+	 * for (const entityId of exited) {
+	 *     // ...
+	 * }
+	 * ```
+	 */
+	public *exitedQuery(): Generator<EntityId> {
+		for (const entityId of this.exited.dense) {
+			yield entityId;
+		}
+
+		this.exited.dense.clear();
+	}
+
+	/**
+	 * @returns an array of all the entities that currently match the query.
+	 */
+	public items(): Array<EntityId> {
+		const newArray = new Array<number>(this.size());
+		for (const index of $range(0, this.archetypes.size() - 1)) {
+			const archetype = this.archetypes[index]!.entities;
+			archetype.move(0, archetype.size(), newArray.size(), newArray);
+		}
+
+		return newArray;
+	}
+
+	/**
+	 * Runs a callback for each entity that matches the query.
+	 */
+	public *iter(): Generator<EntityId> {
+		// TODO: This should be turned into a *[Symbol.iterator] method whenever
+		// that is supported.
+		for (const archetype of this.archetypes) {
+			for (const entityId of archetype.entities) {
+				yield entityId;
+			}
+		}
+	}
+
+	/**
+	 * @returns the number of entities that currently match the query.
+	 */
+	public size(): number {
+		let size = 0;
+
+		for (const archetype of this.archetypes) {
+			size += archetype.entities.size();
+		}
+
+		return size;
+	}
+
+	/**
+	 * Called when a leaf node is reached in the query mask.
+	 *
+	 * @param target The current remaining mask.
+	 * @param mask The leaf node to match with.
+	 *
+	 * @returns True if the mask matches the query mask.
+	 */
+	private static partial(target: Array<number>, mask: MLeaf): boolean {
+		if (mask.op === ALL) {
+			for (const index of $range(0, mask.dt.size() - 1)) {
+				if ((target[index]! & mask.dt[index]!) < mask.dt[index]!) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+
+		for (const index of $range(0, mask.dt.size() - 1)) {
+			if ((target[index]! & mask.dt[index]!) > 0) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * Creates a decision tree from a given query.
+	 * @param raw The raw data to create the decision tree from.
+	 */
+	private readonly createQuery = (raw: RawQuery): QueryMask => {
+		if (raw.op === NOT) {
+			return { dt: this.createQuery(raw.dt as RawQuery), op: raw.op };
+		}
+
+		const numbers: Array<number> = [];
+		const result: [MLeaf, ...Array<QueryMask>] = [{ dt: [], op: raw.op }];
+		for (const index of raw.dt as Array<RawQuery | AllComponentTypes>) {
+			if ("componentId" in index) {
+				numbers.push((index as Internal<AllComponentTypes>).componentId);
+			} else {
+				result.push(this.createQuery(index as RawQuery));
+			}
+		}
+
+		result[0].dt = new Array<number>(math.ceil((math.max(-1, ...numbers) + 1) / 32), 0);
+		for (const index of numbers) {
+			result[0].dt[math.floor(index / 32)] |= 1 << index % 32;
+		}
+
+		return { dt: result, op: raw.op };
+	};
+}

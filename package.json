@@ -1,0 +1,55 @@
+{
+	"name": "@rbxts/nucleus",
+	"version": "0.1",
+	"description": "",
+	"author": "",
+	"license": "ISC",
+	"keywords": [],
+	"exports": "./out/index.d.ts",
+	"main": "out/init.lua",
+	"types": "out/index.d.ts",
+	"files": [
+		"!**/*.tsbuildinfo",
+		"!**/testBootstrap.*",
+		"!out/services.d.ts",
+		"out"
+	],
+	"scripts": {
+		"build": "rbxtsc --verbose",
+		"watch": "rbxtsc -w",
+		"publish": "npm run build && mkdir build & npm pack --pack-destination=build",
+		"test:build": "rbxtsc --verbose --type game --rojo studio.project.json",
+		"test:watch": "rbxtsc -w --verbose --type game --rojo studio.project.json",
+		"test:serve": "rojo serve ./studio.project.json",
+		"test:rojo": "mkdir build & npm run test:build && rojo build -o ./build/test.rbxlx studio.project.json",
+		"test:run": "set RUST_BACKTRACE=full & dir & run-in-roblox --place ./build/test.rbxlx --script ./out/testBootstrap.server.lua",
+		"test": "npm run publish && npm run test:build && npm run test:rojo"
+	},
+	"publishConfig": {
+		"access": "public"
+	},
+	"dependencies": {
+		"@rbxts/object-utils": "^1.0.4",
+		"@rbxts/services": "^1.5.1",
+		"@rbxts/sift": "^0.0.4",
+		"@rbxts/stacks-and-queues": "^1.0.5",
+		"@rbxts/t": "^3.1.0"
+	},
+	"devDependencies": {
+		"@rbxts/compiler-types": "2.2.0-types.0",
+		"@rbxts/testez": "^0.4.2-ts.0",
+		"@rbxts/types": "^1.0.738",
+		"@roblox-ts/eslint-config": "github:christopher-buss/roblox-ts-eslint-config",
+		"@typescript-eslint/eslint-plugin": "^6.17.0",
+		"@typescript-eslint/parser": "^6.17.0",
+		"eslint": "npm:eslint-ts-patch@8.56.0-0",
+		"eslint-flat-config-viewer": "^0.1.4",
+		"eslint-plugin-format": "^0.1.0",
+		"eslint-ts-patch": "8.56.0-0",
+		"lint-staged": "^15.2.0",
+		"prettier": "^3.1.1",
+		"roblox-ts": "^2.2.0",
+		"simple-git-hooks": "^2.9.0",
+		"typescript": "5.2.2"
+	}
+}

@@ -1,0 +1,28 @@
+{
+	"compilerOptions": {
+		"incremental": false,
+		"target": "ESNext",
+		"jsx": "react",
+		"jsxFactory": "Roact.createElement",
+		"jsxFragmentFactory": "Roact.createFragment",
+		"moduleDetection": "force",
+		"noLib": true,
+		"baseUrl": "src",
+		"rootDir": "src",
+		"module": "commonjs",
+		"moduleResolution": "Node",
+		"resolveJsonModule": true,
+		"typeRoots": ["node_modules/@rbxts"],
+		"strict": true,
+		"noFallthroughCasesInSwitch": true,
+		"noImplicitReturns": true,
+		"noUncheckedIndexedAccess": true,
+		"declaration": true,
+		"downlevelIteration": true,
+		"outDir": "out",
+		"allowSyntheticDefaultImports": true,
+		"forceConsistentCasingInFileNames": true
+	},
+	"include": ["src/**/*"],
+	"exclude": ["./eslint.config.ts"]
+}
